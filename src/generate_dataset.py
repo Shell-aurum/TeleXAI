@@ -26,7 +26,7 @@ to learn from):
                          no single sharp trigger (harder to catch early).
 
 Output: telemetry.csv with one row per (tower, hour).
-Ground-truth failure-cause columns are included so YOU can validate
+Ground-truth failure-cause columns are included so we can validate
 explanations, but should be dropped from the model's training features
 (see the "columns to exclude from features" note in the README).
 """
@@ -35,9 +35,8 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
+
+# Configuration
 
 N_TOWERS = 15
 N_DAYS = 60
@@ -82,9 +81,8 @@ def make_tower_profiles(n=N_TOWERS):
     return profiles
 
 
-# ---------------------------------------------------------------------------
 # Baseline (healthy) telemetry
-# ---------------------------------------------------------------------------
+
 
 def seasonal_load_factor(timestamps):
     """Daily + weekly load pattern: busier on weekday evenings, quieter at night."""
@@ -144,9 +142,7 @@ def generate_baseline(profile: TowerProfile, timestamps: pd.DatetimeIndex) -> pd
     })
 
 
-# ---------------------------------------------------------------------------
 # Failure injection
-# ---------------------------------------------------------------------------
 
 def inject_thermal_overload(df, idx, ramp_hours):
     start = max(0, idx - ramp_hours)
@@ -240,11 +236,6 @@ def inject_failures_for_tower(df: pd.DataFrame, n_events: int) -> pd.DataFrame:
     df["hardware_temp_c"] = df["hardware_temp_c"].clip(15, 95)
 
     return df
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     timestamps = pd.date_range("2026-01-01", periods=N_DAYS * 24, freq=f"{FREQ_HOURS}h")
