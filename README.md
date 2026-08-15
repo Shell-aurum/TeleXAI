@@ -28,7 +28,8 @@ faithfulness score for each method.
 ```
 telexai/
 ├── data/
-│   └── raw/telemetry.csv       # synthetic 5G telemetry, 15 towers x 60 days
+│   ├── raw/telemetry.csv       # synthetic 5G telemetry, 15 towers x 60 days
+|   ├── featured/featured.csv
 ├── src/
 │   ├── generate_dataset.py     # synthetic data + failure injection
 │   ├── features.py             # rolling/derived feature engineering
