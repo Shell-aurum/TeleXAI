@@ -1,0 +1,11 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+seaborn
+streamlit
+shap
+lime
+lightgbm
+joblib
+ipykernel
