@@ -30,6 +30,7 @@ telexai/
 ├── data/
 │   ├── raw/telemetry.csv       # synthetic 5G telemetry, 15 towers x 60 days
 |   ├── featured/featured.csv
+├── models/
 ├── src/
 │   ├── generate_dataset.py     # synthetic data + failure injection
 │   ├── features.py             # rolling/derived feature engineering
