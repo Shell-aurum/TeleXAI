@@ -9,3 +9,4 @@ lime
 lightgbm
 joblib
 ipykernel
+xgboost
