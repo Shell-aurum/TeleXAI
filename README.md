@@ -83,4 +83,4 @@ Dr. Atif Saeed, FAST-NUCES Lahore.
 
 ## License
 
-MIT  see [LICENSE](LICENSE)
+MIT - see [LICENSE](LICENSE)
