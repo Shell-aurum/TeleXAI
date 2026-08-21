@@ -92,11 +92,33 @@ class TeleXAIExplainer:
 if __name__ == "__main__":
     # Test the engine initialization and inference
     engine = TeleXAIExplainer(model_name="lightgbm")
-    
+
     # Grab a single failing row from the test set to simulate real-time inference
     test_df = pd.read_csv(os.path.join(engine.data_dir, 'test_data.csv'))
-    sample_row = test_df[test_df['label_fail_6h'] == 1].iloc[[0]]
-    
+
+    # NOTE: label_fail_6h marks a fixed 6h window before failure, but some
+    # failure modes (e.g. signal_interference) only inject 1-4h of actual
+    # anomalous signal. That means some label_fail_6h==1 rows precede the
+    # real signal and look statistically healthy - the model correctly
+    # predicts low risk on those, they just make a poor demo row since
+    # there's nothing for SHAP/LIME to meaningfully explain yet. Even
+    # precursor_window==True rows are weak right at ramp-start (a linear
+    # ramp begins near 0 effect). So for a genuinely illustrative demo,
+    # pick the highest-confidence true positive rather than just the
+    # first positive-labeled or first precursor row.
+    precursor_rows = test_df[test_df['precursor_window'] == True].copy()
+    precursor_rows['risk'] = engine.model.predict_proba(precursor_rows[engine.feature_cols])[:, 1]
+    sample_row = precursor_rows.sort_values('risk', ascending=False).iloc[[0]]
+    print(f"Demo row root cause: {sample_row['root_cause'].values[0]} "
+          f"(tower {sample_row['tower_id'].values[0]})")
+
     risk_score = engine.predict(sample_row)
     print(f"\nPredicted Failure Risk: {risk_score * 100:.1f}%")
+
+    shap_exp = engine.get_shap_explanation(sample_row)
+    print(f"SHAP explanation generated ({len(shap_exp.values)} feature attributions)")
+
+    lime_html = engine.get_lime_explanation(sample_row)
+    print(f"LIME explanation generated ({len(lime_html)} chars of HTML)")
+
     print("\nSHAP and LIME objects generated successfully.")
