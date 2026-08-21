@@ -26,7 +26,7 @@ to learn from):
                          no single sharp trigger (harder to catch early).
 
 Output: telemetry.csv with one row per (tower, hour).
-Ground-truth failure-cause columns are included so we can validate
+Ground-truth failure-cause columns are included so YOU can validate
 explanations, but should be dropped from the model's training features
 (see the "columns to exclude from features" note in the README).
 """
@@ -35,8 +35,9 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
 
-
-# Configuration
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
 N_TOWERS = 15
 N_DAYS = 60
@@ -81,8 +82,9 @@ def make_tower_profiles(n=N_TOWERS):
     return profiles
 
 
+# ---------------------------------------------------------------------------
 # Baseline (healthy) telemetry
-
+# ---------------------------------------------------------------------------
 
 def seasonal_load_factor(timestamps):
     """Daily + weekly load pattern: busier on weekday evenings, quieter at night."""
@@ -142,7 +144,9 @@ def generate_baseline(profile: TowerProfile, timestamps: pd.DatetimeIndex) -> pd
     })
 
 
+# ---------------------------------------------------------------------------
 # Failure injection
+# ---------------------------------------------------------------------------
 
 def inject_thermal_overload(df, idx, ramp_hours):
     start = max(0, idx - ramp_hours)
@@ -224,9 +228,20 @@ def inject_failures_for_tower(df: pd.DataFrame, n_events: int) -> pd.DataFrame:
         df.loc[start:idx, "root_cause"] = failure_type
         df.loc[start:idx, "precursor_window"] = True
 
-        # label = 1 for any hour within PREDICTION_HORIZON_H of the failure
+        # Label = 1 for hours that are BOTH within PREDICTION_HORIZON_H of
+        # the failure AND have the actual injected precursor signal present.
+        # A pure clock-based window (just "within Nh of failure") mislabels
+        # early hours of short ramps (e.g. signal_interference, 1-4h) as
+        # positive even though nothing anomalous has happened yet at that
+        # point - those rows are statistically identical to healthy ones,
+        # which just injects label noise a model can't possibly learn from.
+        # Intersecting with precursor_window removes that noise while still
+        # promising the same PREDICTION_HORIZON_H of lead time whenever a
+        # failure's ramp is long enough to fill it.
         label_start = max(0, idx - PREDICTION_HORIZON_H)
-        df.loc[label_start:idx, f"label_fail_{PREDICTION_HORIZON_H}h"] = 1
+        window_slice = df.loc[label_start:idx]
+        signal_present = window_slice["precursor_window"] == True
+        df.loc[window_slice.index[signal_present], f"label_fail_{PREDICTION_HORIZON_H}h"] = 1
 
     # keep physical values sane after injection
     df["sinr_db"] = df["sinr_db"].clip(-15, 30)
@@ -236,6 +251,11 @@ def inject_failures_for_tower(df: pd.DataFrame, n_events: int) -> pd.DataFrame:
     df["hardware_temp_c"] = df["hardware_temp_c"].clip(15, 95)
 
     return df
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     timestamps = pd.date_range("2026-01-01", periods=N_DAYS * 24, freq=f"{FREQ_HOURS}h")

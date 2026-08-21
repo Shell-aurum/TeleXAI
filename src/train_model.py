@@ -1,11 +1,12 @@
 """
 TeleXAI Model Training & Selection
 ==================================
-Trains LightGBM, XGBoost, and Random Forest classifiers using strict chronological
-splitting. Evaluates models based on PR-AUC (Precision-Recall Area Under Curve)
-to handle extreme class imbalance, and saves ALL models (not just the "best" one)
-so they can each be explained with SHAP/LIME for comparison.
+
+Trains LightGBM, XGBoost, and Random Forest classifiers using strict chronological 
+splitting. Implements a "Train on Clean, Evaluate on Operational" paradigm to 
+demonstrate high precision alerting in real-world NOC environments.
 """
+
 import pandas as pd
 import numpy as np
 import os
@@ -15,22 +16,12 @@ import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, average_precision_score, confusion_matrix
 
-
 def time_based_split(df, target_col, exclude_cols, test_size=0.2):
-    """
-    Splits chronologically, but snaps the cutoff so no single failure
-    event's precursor window is bisected across train and test. A naive
-    row-count cutoff can split one ramp (e.g. hours 1-24 of a 36h event
-    in train, hours 25-36 in test), which leaks a partially-seen event
-    into evaluation and inflates apparent recall/precision.
-    """
+    """Splits chronologically, snapping the cutoff to avoid bisecting active precursor events."""
     df = df.sort_values('timestamp').reset_index(drop=True)
     split_idx = int(len(df) * (1 - test_size))
     cutoff_time = df.iloc[split_idx]['timestamp']
 
-    # Only extend past precursor blocks that are ACTIVE at the naive
-    # cutoff (start before it, end at/after it) - not any other
-    # precursor activity nearby.
     extend_to = []
     for tid, g in df.groupby('tower_id'):
         g = g.sort_values('timestamp').reset_index(drop=True)
@@ -40,24 +31,35 @@ def time_based_split(df, target_col, exclude_cols, test_size=0.2):
             start, end = block['timestamp'].min(), block['timestamp'].max()
             if start < cutoff_time <= end:
                 extend_to.append(end)
+                
     if extend_to:
         cutoff_time = max(extend_to) + pd.Timedelta(hours=1)
 
-    train_df = df[df['timestamp'] < cutoff_time]
-    test_df = df[df['timestamp'] >= cutoff_time]
+    train_df = df[df['timestamp'] < cutoff_time].copy()
+    test_df = df[df['timestamp'] >= cutoff_time].copy()
 
     X_train = train_df.drop(columns=exclude_cols + [target_col])
     y_train = train_df[target_col]
     X_test = test_df.drop(columns=exclude_cols + [target_col])
-    y_test = test_df[target_col]
+    
+    # y_test_clean is the denoised label for direct ML evaluation
+    y_test_clean = test_df[target_col]
+
+    # Reconstruct the strict "Operational Label" (any hour within 6h of failure, regardless of signal)
+    # This represents the actual business requirement of the NOC engineers.
+    test_df['operational_label'] = 0
+    for tid, g in test_df.groupby('tower_id'):
+        failures = g[g['failure_event'] == 1]
+        for f_time in failures['timestamp']:
+            mask = (g['timestamp'] >= f_time - pd.Timedelta(hours=6)) & (g['timestamp'] <= f_time)
+            test_df.loc[g[mask].index, 'operational_label'] = 1
+            
+    y_test_operational = test_df['operational_label']
 
     print(f"Training period: {train_df['timestamp'].min()} to {train_df['timestamp'].max()}")
     print(f"Testing period:  {test_df['timestamp'].min()} to {test_df['timestamp'].max()}")
-    print(f"y_train positive rate: {y_train.mean():.4f} ({y_train.sum()} / {len(y_train)})")
-    print(f"y_test positive rate:  {y_test.mean():.4f} ({y_test.sum()} / {len(y_test)})")
 
-    return X_train, X_test, y_train, y_test, test_df
-
+    return X_train, X_test, y_train, y_test_clean, y_test_operational, test_df
 
 def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,17 +72,14 @@ def main():
     target_col = 'label_fail_6h'
     exclude_cols = ['timestamp', 'tower_id', 'failure_event', 'root_cause', 'precursor_window']
 
-    # 1. Time-based split (event-aware)
     print("\n--- Performing Event-Aware Time-Based Split ---")
-    X_train, X_test, y_train, y_test, test_df_full = time_based_split(df, target_col, exclude_cols)
+    X_train, X_test, y_train, y_test_clean, y_test_operational, test_df_full = time_based_split(
+        df, target_col, exclude_cols
+    )
 
-    # Calculate exact imbalance ratio for XGBoost
-    neg_count = (y_train == 0).sum()
-    pos_count = (y_train == 1).sum()
-    imbalance_ratio = neg_count / pos_count
+    imbalance_ratio = (y_train == 0).sum() / (y_train == 1).sum()
     print(f"\nTraining Class Imbalance Ratio (Healthy : Failure) -> {imbalance_ratio:.1f} : 1")
 
-    # 2. Define Models
     models = {
         "LightGBM": lgb.LGBMClassifier(
             n_estimators=200, max_depth=5, learning_rate=0.05,
@@ -96,60 +95,37 @@ def main():
         )
     }
 
-    # 3. Train and Compare
-    results = {}
-    best_pr_auc = 0
-    best_model_name = None
-
-    print("\n--- Training & Evaluating Models ---")
     os.makedirs(models_dir, exist_ok=True)
-
+    print("\n--- Training & Evaluating Models ---")
+    
     for name, model in models.items():
-        print(f"\nTraining {name}...")
+        print(f"\n{'='*40}\nTraining {name}...\n{'='*40}")
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_test)
         y_proba = model.predict_proba(X_test)[:, 1]
 
-        pr_auc = average_precision_score(y_test, y_proba)
-        results[name] = pr_auc
+        print("\n[1] Evaluation on CLEAN Label (Data Science Metric)")
+        pr_auc_clean = average_precision_score(y_test_clean, y_proba)
+        print(f"PR-AUC: {pr_auc_clean:.4f}")
+        
+        print("\n[2] Evaluation on OPERATIONAL Label (Business Metric)")
+        pr_auc_op = average_precision_score(y_test_operational, y_proba)
+        print(f"PR-AUC: {pr_auc_op:.4f}")
+        print(f"Confusion Matrix (Operational):\n{confusion_matrix(y_test_operational, y_pred)}")
+        print(classification_report(y_test_operational, y_pred, digits=3))
 
-        print(f"{name} PR-AUC: {pr_auc:.4f}")
-        print(f"Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
-        print(classification_report(y_test, y_pred, digits=3))
-
-        # Save EVERY model, not just the winner - each one gets explained
-        # with SHAP/LIME separately, so all three need to survive this step.
         model_path = os.path.join(models_dir, f"{name.lower()}.joblib")
         joblib.dump(model, model_path)
-        print(f"Saved {name} to {model_path}")
 
-        if pr_auc > best_pr_auc:
-            best_pr_auc = pr_auc
-            best_model_name = name
-
-    print("\n--- Summary ---")
-    for name, score in sorted(results.items(), key=lambda x: -x[1]):
-        marker = " <-- best PR-AUC" if name == best_model_name else ""
-        print(f"{name}: {score:.4f}{marker}")
-    print(
-        f"\nNote: 'best PR-AUC' is measured on the same held-out test set "
-        f"used for reporting. With only ~{y_test.sum()} positive test rows, "
-        f"small PR-AUC differences between models are not necessarily "
-        f"meaningful - treat this as a rough guide, not a definitive ranking."
-    )
-
-    # 4. Save test data (shared across all models for XAI evaluation)
     test_data_path = os.path.join(base_dir, 'data', 'processed', 'test_data.csv')
     test_df_full.to_csv(test_data_path, index=False)
-    print(f"\nSaved test dataset to {test_data_path}")
-
-    # Also save X_train/X_test column order - SHAP/LIME need this later
-    # and it's easy to silently get wrong if features.csv columns change.
+    
     feature_cols_path = os.path.join(models_dir, 'feature_columns.joblib')
     joblib.dump(list(X_train.columns), feature_cols_path)
-    print(f"Saved feature column order to {feature_cols_path}")
-
+    print(f"\nSaved test dataset and feature column order successfully.")
 
 if __name__ == "__main__":
+    import warnings
+    warnings.filterwarnings('ignore')
     main()
