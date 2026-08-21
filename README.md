@@ -49,10 +49,10 @@ telexai/
 - [x] Synthetic telemetry generator with 4 labeled failure modes
 - [x] Feature engineering (rolling stats, rate-of-change)
 - [x] Predictive models (LightGBM, RandomForest, XGBoost) + time-based evaluation
-- [ ] SHAP explanations (global + local)
-- [ ] LIME explanations
-- [ ] SHAP vs LIME faithfulness comparison against ground-truth cause
-- [ ] Streamlit dashboard
+- [x] SHAP explanations (global + local)
+- [x] LIME explanations
+- [x] SHAP vs LIME faithfulness comparison against ground-truth cause
+- [x] Streamlit dashboard
 - [ ] Write-up / report
 
 ## Dataset
