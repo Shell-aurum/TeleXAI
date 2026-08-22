@@ -96,16 +96,7 @@ if __name__ == "__main__":
     # Grab a single failing row from the test set to simulate real-time inference
     test_df = pd.read_csv(os.path.join(engine.data_dir, 'test_data.csv'))
 
-    # NOTE: label_fail_6h marks a fixed 6h window before failure, but some
-    # failure modes (e.g. signal_interference) only inject 1-4h of actual
-    # anomalous signal. That means some label_fail_6h==1 rows precede the
-    # real signal and look statistically healthy - the model correctly
-    # predicts low risk on those, they just make a poor demo row since
-    # there's nothing for SHAP/LIME to meaningfully explain yet. Even
-    # precursor_window==True rows are weak right at ramp-start (a linear
-    # ramp begins near 0 effect). So for a genuinely illustrative demo,
-    # pick the highest-confidence true positive rather than just the
-    # first positive-labeled or first precursor row.
+   
     precursor_rows = test_df[test_df['precursor_window'] == True].copy()
     precursor_rows['risk'] = engine.model.predict_proba(precursor_rows[engine.feature_cols])[:, 1]
     sample_row = precursor_rows.sort_values('risk', ascending=False).iloc[[0]]
