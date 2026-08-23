@@ -1,6 +1,7 @@
 # Use a lightweight Python base image
-FROM python:3.11-slim
-
+FROM python:3.14-slim
+# Install the OpenMP library required by LightGBM/XGBoost
+RUN apt-get update && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
 # Set the working directory inside the container
 WORKDIR /app
 
