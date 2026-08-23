@@ -10,6 +10,7 @@ import pandas as pd
 import os
 import sys
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import shap
 import streamlit.components.v1 as components
 import plotly.express as px
@@ -378,14 +379,68 @@ with tab_shap:
         fig_shap.patch.set_facecolor(COLORS['surface'])
         ax.set_facecolor(COLORS['surface'])
         shap.plots.waterfall(shap_obj, show=False)
+
+        # shap.plots.waterfall creates extra internal axes for the
+        # feature-name column and the feature-value column. Those default
+        # to an opaque WHITE facecolor with black tick labels regardless of
+        # what's set on the main axis above, which is what was actually
+        # causing black-on-dark text. Restyle every axis shap created, not
+        # just the one this function created directly.
+        for a in fig_shap.axes:
+            a.set_facecolor(COLORS['surface'])
+            for spine in a.spines.values():
+                spine.set_edgecolor(COLORS['border'])
+            a.tick_params(colors=COLORS['text'])
+            for label in a.get_xticklabels() + a.get_yticklabels():
+                label.set_color(COLORS['text'])
+            for t in a.texts:
+                # keep shap's own semantic red/white contribution colors,
+                # only fix labels that were left plain black
+                r, g, b = mcolors.to_rgb(t.get_color())
+                if r < 0.25 and g < 0.25 and b < 0.25:
+                    t.set_color(COLORS['text'])
+
         st.pyplot(fig_shap)
         plt.clf()
 
 with tab_lime:
     with st.container(border=True):
         st.caption("Shows strict local feature boundaries that contributed to this specific prediction.")
-        lime_html = engine.get_lime_explanation(current_row)
-        components.html(lime_html, height=500, scrolling=True)
+
+        # Rendering LIME's built-in HTML (a bundled webpack/D3 visualization)
+        # inside components.html's sandboxed iframe turned out unreliable
+        # across browsers, sometimes rendering empty with no error on the
+        # Python side, since AppTest can't execute the iframe's JS to catch
+        # that. components.html is also already flagged by Streamlit itself
+        # as being phased out. Rendering the same underlying LIME data
+        # natively with Plotly avoids that dependency entirely and matches
+        # the rest of the dashboard's theme automatically.
+        lime_data = engine.get_lime_explanation_data(current_row, num_features=8)
+        lime_data = sorted(lime_data, key=lambda x: x[1])  # ascending for horizontal bar order
+        conditions = [c for c, _ in lime_data]
+        weights = [w for _, w in lime_data]
+        bar_colors = [COLORS['critical'] if w > 0 else COLORS['signal'] for w in weights]
+
+        fig_lime = go.Figure(go.Bar(
+            x=weights,
+            y=conditions,
+            orientation='h',
+            marker_color=bar_colors,
+        ))
+        fig_lime.update_layout(
+            template="plotly_dark",
+            paper_bgcolor=COLORS['surface'],
+            plot_bgcolor=COLORS['surface'],
+            font=dict(family="IBM Plex Sans", color=COLORS['text']),
+            height=380,
+            margin=dict(l=10, r=10, t=20, b=10),
+            xaxis_title="Contribution to risk",
+        )
+        fig_lime.update_xaxes(showgrid=True, gridcolor=COLORS['border'], zerolinecolor=COLORS['border'])
+        fig_lime.update_yaxes(showgrid=False)
+
+        st.plotly_chart(fig_lime, width='stretch')
+        st.caption("🔴 pushes risk up   🔵 pushes risk down")
 
 st.markdown("---")
 st.caption("Built for EU Telecom Predictive Maintenance Research | Architecture: LightGBM + TreeSHAP + LIME")
