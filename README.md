@@ -53,7 +53,7 @@ telexai/
 - [x] LIME explanations
 - [x] SHAP vs LIME faithfulness comparison against ground-truth cause
 - [x] Streamlit dashboard
-- [ ] Write-up / report
+- [x] Write-up / report
 
 ## Dataset
 
