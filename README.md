@@ -77,9 +77,7 @@ pip install -r requirements.txt
 
 ## Author
 
-Built as part of an applied XAI research portfolio, alongside a
-reproduction of the original LIME paper under the supervision of
-Dr. Atif Saeed, FAST-NUCES Lahore.
+Built as part of an applied XAI research portfolio, alongside a research endeavour
 
 ## License
 
