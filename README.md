@@ -81,4 +81,4 @@ Built as part of an applied XAI research portfolio, alongside a research endeavo
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+MIT - see [LICENSE]
