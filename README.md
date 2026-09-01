@@ -7,12 +7,6 @@ end-to-end pipeline that predicts 5G network degradation and explains
 each prediction using SHAP and LIME, with a focus on measuring whether
 those explanations are actually *correct*, not just plausible.
 
-This project pairs with a from-scratch reproduction of
-[*"Why Should I Trust You?": Explaining the Predictions of Any Classifier*](https://arxiv.org/abs/1602.04938)
-(Ribeiro, Singh & Guestrin, 2016) — the paper that introduced LIME.
-The reproduction lives in a companion repo/section (linked below) and
-the theoretical grounding from it directly informs how explanations
-are evaluated here.
 
 ## Why this is different from a typical "SHAP demo"
 
