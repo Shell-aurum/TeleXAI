@@ -71,7 +71,7 @@ pip install -r requirements.txt
 
 ## Author
 
-Built as part of an applied XAI research portfolio, alongside a research endeavour
+Built as part of an applied XAI research portfolio, alongside a research endeavour.
 
 ## License
 
